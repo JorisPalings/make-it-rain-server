@@ -4,7 +4,8 @@
   "description": "",
   "main": "index.js",
   "scripts": {
-
+    "start": "node .",
+    "deploy": "git push heroku master"
   },
   "author": "",
   "license": "ISC",
