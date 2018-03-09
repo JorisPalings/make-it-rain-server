@@ -8,7 +8,8 @@ const config = {
 }
 
 const server = new ws.Server({
-  port: config.port
+  port: config.port,
+  clientTracking: true
 }, () => {
   console.log(`WebSocket server listening on port ${config.port}`);
 });
@@ -19,6 +20,8 @@ const clients = [
   { id: 'Zuiden',   latitude: 49.859528,  longitude: 4.645805 },
   { id: 'Westen',   latitude: 50.859528,  longitude: 3.645805 }
 ];
+
+console.log('All clients:', clients);
 
 server.on('connection', (socket, request) => {
   const clientIP = request.connection.remoteAddress;
@@ -32,10 +35,26 @@ server.on('connection', (socket, request) => {
         handleHandshakeMessage(clientIP, parsedMessage);
         break;
       case 'position':
-        handlePositionMessage(clientIP, parsedMessage);
+        handlePositionMessage(clientIP, parsedMessage).then(clientsInFOV => {
+          server.clients.forEach(client => {
+            if (client.readyState === ws.OPEN) {
+              client.send(JSON.stringify({ type: 'clients', data: clientsInFOV }));
+            }
+          });
+        }).catch(error => {
+          console.error(error);
+        });
         break;
       case 'heading':
-        handleHeadingMessage(clientIP, parsedMessage);
+        handleHeadingMessage(clientIP, parsedMessage).then(clientsInFOV => {
+          server.clients.forEach(client => {
+            if (client.readyState === ws.OPEN) {
+              client.send(JSON.stringify({ type: 'clients', data: clientsInFOV }));
+            }
+          });
+        }).catch(error => {
+          console.error(error);
+        });
         break;
       case 'payment':
         handlePaymentMessage(clientIP, parsedMessage);
@@ -47,12 +66,12 @@ server.on('connection', (socket, request) => {
   });
 
   socket.on('close', (event) => {
-    console.error(`Closed connection with ${clientIP}`);
+    console.log(`Client ${clientIP} disconnected`);
     removeClientById(clientIP);
   });
 
   socket.on('error', (event) => {
-    console.error(`Closed connection with ${clientIP}`);
+    console.error(`Client ${clientIP} disconnected`);
     removeClientById(clientIP);
   });
 });
@@ -62,30 +81,46 @@ function handleHandshakeMessage(clientIP, message) {
   clients.push({
     id: clientIP
   });
-  console.log(`Added client with id ${clientIP}`);
+  console.log(`Client ${clientIP} connected`);
 }
 
 function handlePositionMessage(clientIP, message) {
-  try {
-    let currentClient = getClientById(clientIP);
-    currentClient.latitude = message.data.latitude;
-    currentClient.longitude = message.data.longitude;
-    console.log(`Position of client ${currentClient.id} changed to ${message.data.latitude}, ${message.data.longitude}`);
-    if(currentClient.heading) findClientsInFOV(clientIP);
-  } catch (error) {
-    console.error('Error', clientIP);
-  }
+  return new Promise((resolve, reject) => {
+    try {
+      const currentClient = getClientById(clientIP);
+      currentClient.latitude = message.data.latitude;
+      currentClient.longitude = message.data.longitude;
+      console.log(`Position of client ${currentClient.id} changed to ${message.data.latitude}, ${message.data.longitude}`);
+      if(currentClient.heading) {
+        findClientsInFOV(currentClient).then(clientsInFOV => {
+          resolve(clientsInFOV)
+        }).catch(error => {
+          reject(error);
+        });
+      }
+    } catch (error) {
+      reject('Error', error);
+    }
+  });
 }
 
 function handleHeadingMessage(clientIP, message) {
-  try {
-    let currentClient = getClientById(clientIP);
-    currentClient.heading = message.data;
-    console.log(`Heading of client ${currentClient.id} changed to ${message.data}`);
-    if(currentClient.latitude && currentClient.longitude) findClientsInFOV(clientIP);
-  } catch (error) {
-    console.error('Error:', error);
-  }
+  return new Promise((resolve, reject) => {
+    try {
+      const currentClient = getClientById(clientIP);
+      currentClient.heading = message.data;
+      console.log(`Heading of client ${currentClient.id} changed to ${message.data}`);
+      if(currentClient.latitude && currentClient.longitude) {
+        findClientsInFOV(currentClient).then(clientsInFOV => {
+          resolve(clientsInFOV)
+        }).catch(error => {
+          reject(error);
+        });
+      }
+    } catch (error) {
+      reject('Error', error);
+    }
+  });
 }
 
 function handlePaymentMessage(clientIP, message) {
@@ -98,19 +133,24 @@ function getClientById(id) {
 
 function removeClientById(id) {
   clients.splice(clients.indexOf(getClientById(id)), 1);
-  console.log(`Removed client ${id}`);
+  console.log(`Client ${id} disconnected`);
 }
 
-function findClientsInFOV(clientIP) {
-  const currentClient = getClientById(clientIP);
-  console.log(clients);
-  const allOtherClients = clients.filter(client => client !== currentClient);
-  console.log(allOtherClients);
-  const possibleClients = [];
-  allOtherClients.forEach(possibleClient => {
-    if(isClientInFOV(currentClient, possibleClient)) {
-      console.log(possibleClient.id, 'is in FOV');
-      possibleClients.push(possibleClient);
+function findClientsInFOV(currentClient) {
+  return new Promise((resolve, reject) => {
+    try {
+      console.log('All clients:', clients);
+      const allOtherClients = clients.filter(client => client !== currentClient);
+      const clientsInFOV = [];
+      allOtherClients.forEach(possibleClient => {
+        if(isClientInFOV(currentClient, possibleClient)) {
+          console.log(possibleClient.id, 'is in FOV');
+          clientsInFOV.push(possibleClient);
+        }
+      });
+      resolve(clientsInFOV);
+    } catch(error) {
+      reject('Error: Error trying to find clients in FOV: ' + error);
     }
   });
 }
@@ -122,6 +162,6 @@ function isClientInFOV(currentClient, otherClient) {
   const lowerBound = (currentClient.heading - halfFOV) >= 0 ? (currentClient.heading - halfFOV) : 360 - (currentClient.heading - halfFOV);
   const upperBound = (currentClient.heading + halfFOV) < 360 ? (currentClient.heading + halfFOV) : (currentClient.heading + halfFOV) % 360;
   const sector = turf.sector(currentClientPosition, config.maxDistance, lowerBound, upperBound);
-  console.log('Lower bound is', lowerBound, 'and upper bound is', upperBound);
+  // console.log('Lower bound is', lowerBound, 'and upper bound is', upperBound);
   return turf.booleanContains(sector, otherClientPosition);
 }
