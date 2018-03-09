@@ -1,15 +1,20 @@
-const ws = require('ws');
-const turf = require('@turf/turf');
-
 const config = {
   port: 6969,
   maxFOV: 45, // degrees
   maxDistance: 1000 // km
 }
 
-const server = new ws.Server({
-  port: config.port
-});
+const ws = require('ws');
+const turf = require('@turf/turf');
+const express = require('express');
+const webSocketServer = require('ws').Server;
+
+const app = express()
+  .listen(config.port, () => {
+    console.info(`Listening on port ${config.port}`);
+  });
+
+const server = new webSocketServer({ server: app });
 
 const clients = [
   { id: 'Noorden',  latitude: 51.859528,  longitude: 4.645805 },
