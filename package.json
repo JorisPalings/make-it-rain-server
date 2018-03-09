@@ -1,0 +1,16 @@
+{
+  "name": "make-it-rain-server",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+
+  },
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "@turf/turf": "^5.1.6",
+    "express": "^4.16.2",
+    "ws": "^4.1.0"
+  }
+}
