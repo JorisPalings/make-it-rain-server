@@ -14,6 +14,10 @@ const app = express()
     console.info(`Listening on port ${config.port}`);
   });
 
+app.get('/', (req, res) => {
+  res.send('Hello world!');
+});
+
 const server = new webSocketServer({ server: app });
 
 const clients = [
