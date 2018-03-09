@@ -1,5 +1,5 @@
 const config = {
-  port: 6969,
+  port: process.env.PORT || 6969,
   maxFOV: 45, // degrees
   maxDistance: 1000 // km
 }
