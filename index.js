@@ -2,13 +2,15 @@ const ws = require('ws');
 const turf = require('@turf/turf');
 
 const config = {
-  port: 6969,
+  port: process.env.PORT || 6969,
   maxFOV: 45, // degrees
   maxDistance: 1000 // km
 }
 
 const server = new ws.Server({
-  port: process.env.PORT || config.port
+  port: config.port
+}, () => {
+  console.info(`WebSocket server listening on port ${config.port}`);
 });
 
 const clients = [
