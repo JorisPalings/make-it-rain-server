@@ -25,15 +25,15 @@ console.log('All clients:', clients);
 
 server.on('connection', (socket, request) => {
   const clientIP = request.connection.remoteAddress;
-  console.log(`Established connection with ${clientIP}`);
 
   socket.on('message', message => {
-    console.log('----------------------------------------');
     const parsedMessage = JSON.parse(message);
+
     switch(parsedMessage.type) {
       case 'handshake':
-        handleHandshakeMessage(clientIP, parsedMessage);
+        handleHandshakeMessage(socket, clientIP);
         break;
+
       case 'position':
         handlePositionMessage(clientIP, parsedMessage).then(clientsInFOV => {
           server.clients.forEach(client => {
@@ -45,6 +45,7 @@ server.on('connection', (socket, request) => {
           console.error(error);
         });
         break;
+
       case 'heading':
         handleHeadingMessage(clientIP, parsedMessage).then(clientsInFOV => {
           server.clients.forEach(client => {
@@ -56,9 +57,16 @@ server.on('connection', (socket, request) => {
           console.error(error);
         });
         break;
+
       case 'payment':
-        handlePaymentMessage(clientIP, parsedMessage);
+        handlePaymentMessage(clientIP, parsedMessage).then((recipient) => {
+          const recipientSocket = getClientById(recipient).socket;
+          recipientSocket.send(JSON.stringify({ type: 'receivedPayment', data: sender.id }));
+        }).catch(error => {
+          console.error(error);
+        });
         break;
+
       default:
         break;
     }
@@ -76,10 +84,11 @@ server.on('connection', (socket, request) => {
   });
 });
 
-function handleHandshakeMessage(clientIP, message) {
-  console.log(`Received handshake from client with id ${clientIP}`);
+function handleHandshakeMessage(socket, clientIP) {
+  console.log(`Received handshake from ${clientIP}`);
   clients.push({
-    id: clientIP
+    id: clientIP,
+    socket: socket
   });
   console.log(`Client ${clientIP} connected`);
 }
@@ -93,7 +102,7 @@ function handlePositionMessage(clientIP, message) {
       console.log(`Position of client ${currentClient.id} changed to ${message.data.latitude}, ${message.data.longitude}`);
       if(currentClient.heading) {
         findClientsInFOV(currentClient).then(clientsInFOV => {
-          resolve(clientsInFOV)
+          resolve(clientsInFOV);
         }).catch(error => {
           reject(error);
         });
@@ -124,7 +133,15 @@ function handleHeadingMessage(clientIP, message) {
 }
 
 function handlePaymentMessage(clientIP, message) {
-  console.log(`Payment made by client ${clientIP} with position ${getClientById(clientIP).latitude}, ${getClientById(clientIP).longitude} and heading ${getClientById(clientIP).heading}`);
+  return new Promise((resolve, reject) => {
+    try {
+      const recipient = message.data;
+      console.log('Received payment from', clientIP, 'for', recipient);
+      resolve(recipient);
+    } catch(error) {
+      reject(error);
+    }
+  });
 }
 
 function getClientById(id) {
@@ -133,7 +150,6 @@ function getClientById(id) {
 
 function removeClientById(id) {
   clients.splice(clients.indexOf(getClientById(id)), 1);
-  console.log(`Client ${id} disconnected`);
 }
 
 function findClientsInFOV(currentClient) {
